@@ -42,7 +42,9 @@ $raiz = $ventana.FindName('Raiz'); $marco = $ventana.FindName('Marco')
 $linea = $ventana.FindName('Linea'); $chrome = $ventana.FindName('Chrome'); $grip = $ventana.FindName('Grip')
 $area = [System.Windows.SystemParameters]::WorkArea
 $punto = $ventana.FindName('Punto')
-if (Test-Path $logo) { try { $ventana.Icon = [System.Windows.Media.Imaging.BitmapFrame]::Create([Uri]$logo) } catch {} }
+$icoFile = Join-Path $PSScriptRoot 'medidor.ico'
+$icoSrc = if (Test-Path $icoFile) { $icoFile } else { $logo }
+if (Test-Path $icoSrc) { try { $ventana.Icon = [System.Windows.Media.Imaging.BitmapFrame]::Create([Uri]$icoSrc) } catch {} }
 $ventana.Left = $area.Right - 316; $ventana.Top = $area.Bottom - 74
 
 $conv = New-Object System.Windows.Media.BrushConverter
@@ -168,14 +170,15 @@ function ColorDe($p) { if ($script:viejo) { $C_GRIS } elseif ($p -ge 80) { $C_NA
 # Consulta cada 90 s. Si falla: registra el motivo, avisa una vez, reintenta con espera creciente
 # y mientras tanto usa el archivo del plugin. Cuando vuelve a andar, se recupera solo.
 Add-Type -AssemblyName System.Net.Http, System.Windows.Forms, System.Drawing
-$http = New-Object System.Net.Http.HttpClient; $http.Timeout = [TimeSpan]::FromSeconds(15)
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch {}
+$http = New-Object System.Net.Http.HttpClient; $http.Timeout = [TimeSpan]::FromSeconds(40)
 $credFile = Join-Path $env:USERPROFILE '.claude\.credentials.json'
 $logFile = Join-Path $env:USERPROFILE '.claude\medidor-salud.log'
 $URL_USO = 'https://api.anthropic.com/api/oauth/usage'
 $script:api = $null; $script:apiEstado = 'iniciando'; $script:apiMotivo = 'conectando…'
 $script:tarea = $null; $script:proxima = Get-Date; $script:fallos = 0; $script:avisado = ''
 $aviso = New-Object System.Windows.Forms.NotifyIcon
-$aviso.Icon = [System.Drawing.SystemIcons]::Information; $aviso.Text = 'Medidor Claude'
+$aviso.Icon = if (Test-Path (Join-Path $PSScriptRoot 'medidor.ico')) { New-Object System.Drawing.Icon (Join-Path $PSScriptRoot 'medidor.ico') } else { [System.Drawing.SystemIcons]::Information }; $aviso.Text = 'Medidor Claude'
 function Log($t) { try { Add-Content -Path $logFile -Value "$(Get-Date -Format s) $t" -Encoding UTF8 } catch {} }
 function Avisar($t) {
   if ($script:avisado -eq $t) { return }; $script:avisado = $t
@@ -202,7 +205,7 @@ function MarcarFallo($m) {
   $script:fallos++
   if ($script:apiMotivo -ne $m) { Log "FALLO: $m" }
   $script:apiEstado = 'falla'; $script:apiMotivo = $m
-  $esp = [Math]::Min(900, 90 * [Math]::Pow(2, [Math]::Min($script:fallos - 1, 3)))
+  $esp = if ($script:fallos -le 2) { 20 } else { [Math]::Min(900, 90 * [Math]::Pow(2, [Math]::Min($script:fallos - 3, 3))) }
   $script:proxima = (Get-Date).AddSeconds($esp)
   if ($script:fallos -ge 3) { Avisar "No puedo leer el uso en vivo: $m. Sigo con el dato de Claude Code y reintento solo." }
 }
@@ -222,7 +225,7 @@ function RevisarApi {
   $t = $script:tarea
   if (-not $t -or -not $t.IsCompleted) { return }
   $script:tarea = $null
-  if ($t.IsFaulted -or $t.IsCanceled) { MarcarFallo 'sin conexión con api.anthropic.com'; return }
+  if ($t.IsFaulted -or $t.IsCanceled) { $ex = if ($t.Exception) { $t.Exception.GetBaseException().Message } else { 'tiempo agotado' }; MarcarFallo "sin conexión con api.anthropic.com ($ex)"; return }
   $r = $t.Result; $cod = [int]$r.StatusCode
   if ($cod -eq 401 -or $cod -eq 403) { MarcarFallo 'sesión vencida: abrí Claude Code y se renueva sola'; return }
   if ($cod -eq 404 -or $cod -eq 410) { MarcarFallo "Anthropic cerró o movió el endpoint ($cod)"; return }
