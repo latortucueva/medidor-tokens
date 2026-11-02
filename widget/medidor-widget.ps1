@@ -259,6 +259,12 @@ function RevisarApi {
   if (-not $ms) { MarcarFallo 'cambió el formato de la respuesta'; return }
   if ($script:apiEstado -eq 'falla') { Log 'RECUPERADO: el endpoint volvió a funcionar'; if ($script:avisado) { Avisar 'El uso en vivo volvió a funcionar.' } }
   elseif ($script:apiEstado -eq 'iniciando') { Log 'OK: uso en vivo funcionando' }
+  $nuevo5 = @($ms | Where-Object { $_.n -eq '5 h' })[0]
+  $antes = if ($script:api) { @($script:api.ms | Where-Object { $_.n -eq '5 h' })[0] } else { $null }
+  if ($antes -and $antes.pct -ge 10) {
+    $ahora = if ($nuevo5) { $nuevo5.pct } else { 0 }
+    if ($antes.pct - $ahora -ge 15) { Renovado $antes.pct $ahora }
+  }
   $script:api = [pscustomobject]@{ ms = $ms; t = Get-Date }
   $script:apiEstado = 'ok'; $script:apiMotivo = 'en vivo desde Anthropic (cada 90 s)'; $script:fallos = 0; $script:avisado = ''
   $script:proxima = (Get-Date).AddSeconds(90)
@@ -516,6 +522,34 @@ function IconoDinamico($pct, $color) {
   } catch {}
 }
 
+# ---------- renovación del límite de 5 h: sonido + aviso + anillo que retrocede ----------
+$script:animPct = $null
+$animTimer = New-Object System.Windows.Threading.DispatcherTimer
+$animTimer.Interval = [TimeSpan]::FromMilliseconds(45)
+$animTimer.Add_Tick({
+  $a = $script:anim
+  $t = [Math]::Min(1.0, ((Get-Date) - $a.t0).TotalMilliseconds / $a.dur)
+  $e = 1 - [Math]::Pow(1 - $t, 3)   # frena al final
+  $script:animPct = $a.desde + ($a.hasta - $a.desde) * $e
+  Actualizar $true
+  if ($t -ge 1) { $animTimer.Stop(); $script:animPct = $null; $script:iconoFirma = ''; Actualizar $true }
+})
+function SonidoRenovacion {
+  foreach ($w in 'Windows Notify System Generic.wav', 'Windows Unlock.wav', 'tada.wav') {
+    $f = Join-Path $env:WINDIR "Media\$w"
+    if (Test-Path $f) { try { (New-Object System.Media.SoundPlayer $f).Play(); return } catch {} }
+  }
+  [System.Media.SystemSounds]::Asterisk.Play()
+}
+function Renovado($desde, $hasta) {
+  Log "RENOVADO: límite de 5 h de $([Math]::Round($desde))% a $([Math]::Round($hasta))%"
+  SonidoRenovacion
+  try { $aviso.Visible = $true; $aviso.ShowBalloonTip(8000, 'Límite de 5 h renovado 🐢', "Ya podés volver a usar Claude. Uso actual: $([Math]::Round($hasta))%.", 'Info') } catch {}
+  if ($ventana.WindowState -eq 'Minimized') { $ventana.WindowState = 'Normal' }
+  $script:anim = @{ desde = [double]$desde; hasta = [double]$hasta; t0 = Get-Date; dur = 1800.0 }
+  $animTimer.Start()
+}
+
 $script:ultimo = ''
 function Actualizar([bool]$forzar = $false) {
   RevisarApi; PedirApi
@@ -538,6 +572,10 @@ function Actualizar([bool]$forzar = $false) {
   if (-not $m -and -not $vivo) { [void]$raiz.Children.Add((Vacio)); return }
   $ms = if ($vivo) { @($script:api.ms) + @(@(if ($m) { Metricas $m }) | Where-Object { $_.n -eq 'Ctx' }) } else { @(Metricas $m) }
   if ($ms.Count -eq 0) { [void]$raiz.Children.Add((Vacio)); return }
+  if ($null -ne $script:animPct) {
+    $ms = @($ms | ForEach-Object { if ($_.n -eq '5 h') { $c = $_.PSObject.Copy(); $c.pct = $script:animPct; $c } else { $_ } })
+    $script:viejo = $false
+  }
   IconoDinamico $ms[0].pct (ColorDe $ms[0].pct)
   switch ($modo) {
     'tira' { [void]$raiz.Children.Add((Tira $ms $edad $W $true)) }
@@ -573,6 +611,10 @@ $ventana.Add_MouseEnter({
 $ventana.Add_MouseLeave({ $marco.BorderBrush = Pincel '#2A2A2E'; $chrome.Visibility = 'Collapsed'; $grip.Visibility = 'Collapsed' })
 $ventana.Add_MouseLeftButtonDown({ param($s, $e)
   if ($e.OriginalSource.Tag -ne 'boton' -and $e.ButtonState -eq 'Pressed') { try { $ventana.DragMove() } catch {} } })
+$menu = New-Object System.Windows.Controls.ContextMenu
+$itemProbar = New-Object System.Windows.Controls.MenuItem; $itemProbar.Header = 'Probar aviso de renovación'
+$itemProbar.Add_Click({ $p = if ($script:api) { @($script:api.ms)[0].pct } else { 90 }; Renovado ([Math]::Max(60, $p)) 0 })
+[void]$menu.Items.Add($itemProbar); $ventana.ContextMenu = $menu
 $ventana.Add_Closed({ try { $aviso.Dispose() } catch {} })
 $ventana.Add_StateChanged({ if ($ventana.WindowState -eq 'Normal') { $ventana.Topmost = $true } })
 $ventana.Add_SizeChanged({ Actualizar })
