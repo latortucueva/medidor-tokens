@@ -169,7 +169,7 @@ function Metricas($m) {
 }
 
 # ---------- tira (altura mínima) ----------
-function Tira($ms, $edad, $W, $conBotones) {
+function Tira($ms, $edad, $W, $conBotones, $conMetricas = $true) {
   $g = New-Object System.Windows.Controls.Grid
   $g.Height = 40
   Cols $g @(40, '*', 'a', 'a')
@@ -199,7 +199,7 @@ function Tira($ms, $edad, $W, $conBotones) {
     }
     [void]$sp.Children.Add($mm)
   }
-  [void]$g.Children.Add((Colocar $sp 2))
+  if ($conMetricas) { [void]$g.Children.Add((Colocar $sp 2)) }
   if ($conBotones) { $bt = Botones; $bt.Margin = '6,0,0,0'; [void]$g.Children.Add((Colocar $bt 3)) }
   $g
 }
@@ -330,8 +330,8 @@ function Actualizar([bool]$forzar = $false) {
     'tira' { [void]$raiz.Children.Add((Tira $ms $edad $W $true)) }
     'media' {
       $s = New-Object System.Windows.Controls.StackPanel
-      $s.Margin = '0,8,0,0'; $s.VerticalAlignment = 'Center'
-      [void]$s.Children.Add((Tira $ms $edad $W $false))
+      $s.VerticalAlignment = 'Top'
+      [void]$s.Children.Add((Tira $ms $edad $W $true $false))
       [void]$s.Children.Add((FilaBarras $ms $W))
       [void]$raiz.Children.Add($s)
     }
@@ -344,7 +344,7 @@ function Actualizar([bool]$forzar = $false) {
   [void]$linea.Children.Add($l)
   # barra superior al pasar el mouse (arrastrar / minimizar / cerrar), salvo en la tira
   $chrome.Children.Clear()
-  if ($modo -ne 'tira') {
+  if ($modo -notin @('tira', 'media')) {
     $dots = Texto '⠿' $C_GRIS 12; $dots.HorizontalAlignment = 'Center'; $dots.ToolTip = 'Arrastrar'
     [void]$chrome.Children.Add($dots)
     $b = Botones; $b.HorizontalAlignment = 'Right'
