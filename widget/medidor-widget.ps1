@@ -429,12 +429,29 @@ function Modo($w, $h) {
 $script:iconoFirma = ''
 $script:logoBmp = $null
 if (Test-Path $logo) { try { $script:logoBmp = New-Object System.Windows.Media.Imaging.BitmapImage; $script:logoBmp.BeginInit(); $script:logoBmp.UriSource = [Uri]$logo; $script:logoBmp.DecodePixelWidth = 128; $script:logoBmp.CacheOption = 'OnLoad'; $script:logoBmp.EndInit() } catch { $script:logoBmp = $null } }
+$script:logosTenidos = @{}
+function LogoTenido($color) {
+  if (-not $script:logoBmp) { return $null }
+  if ($script:logosTenidos.ContainsKey($color)) { return $script:logosTenidos[$color] }
+  try {
+    $src = New-Object System.Windows.Media.Imaging.FormatConvertedBitmap $script:logoBmp, ([System.Windows.Media.PixelFormats]::Bgra32), $null, 0
+    $w = $src.PixelWidth; $h = $src.PixelHeight; $paso = $w * 4
+    $px = New-Object byte[] ($paso * $h); $src.CopyPixels($px, $paso, 0)
+    $c = [System.Windows.Media.ColorConverter]::ConvertFromString($color)
+    for ($i = 0; $i -lt $px.Length; $i += 4) {
+      $l = [Math]::Max($px[$i], [Math]::Max($px[$i + 1], $px[$i + 2])) / 255.0
+      $px[$i] = [byte]($c.B * $l); $px[$i + 1] = [byte]($c.G * $l); $px[$i + 2] = [byte]($c.R * $l)
+    }
+    $bmp = [System.Windows.Media.Imaging.BitmapSource]::Create($w, $h, 96, 96, ([System.Windows.Media.PixelFormats]::Bgra32), $null, $px, $paso)
+    $bmp.Freeze(); $script:logosTenidos[$color] = $bmp; $bmp
+  } catch { $script:logoBmp }
+}
 function IconoDinamico($pct, $color) {
   $firma = "$([Math]::Round($pct))|$color"
   if ($firma -eq $script:iconoFirma) { return }
   $script:iconoFirma = $firma
   try {
-    $S = 64.0; $w = 7.0; $r = ($S - 2 * 3 - $w) / 2; $c = $S / 2
+    $S = 64.0; $w = 5.5; $r = ($S - 2 * 3 - $w) / 2; $c = $S / 2
     $dv = New-Object System.Windows.Media.DrawingVisual
     $dc = $dv.RenderOpen()
     $dc.DrawRoundedRectangle((Pincel '#09090B'), $null, (New-Object System.Windows.Rect 0, 0, $S, $S), 14, 14)
@@ -452,7 +469,8 @@ function IconoDinamico($pct, $color) {
       $arco.StartLineCap = 'Round'; $arco.EndLineCap = 'Round'
       $dc.DrawGeometry($null, $arco, $g)
     }
-    if ($script:logoBmp) { $L = 38.0; $dc.DrawImage($script:logoBmp, (New-Object System.Windows.Rect (($S - $L) / 2), (($S - $L) / 2), $L, $L)) }
+    $tort = LogoTenido $color
+    if ($tort) { $L = 46.0; $dc.DrawImage($tort, (New-Object System.Windows.Rect (($S - $L) / 2), (($S - $L) / 2), $L, $L)) }
     $dc.Close()
     $rb = New-Object System.Windows.Media.Imaging.RenderTargetBitmap 64, 64, 96, 96, ([System.Windows.Media.PixelFormats]::Pbgra32)
     $rb.Render($dv); $rb.Freeze()
