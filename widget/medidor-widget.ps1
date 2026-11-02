@@ -169,6 +169,15 @@ function Renueva($iso) {
 $script:viejo = $false
 # degradé progresivo: verde azulado -> verde -> verde amarillento -> amarillo -> naranja -> rojo
 $GRADIENTE = @(@(0, 0x00, 0xE5, 0xC8), @(25, 0x00, 0xFF, 0x66), @(45, 0x9B, 0xFF, 0x1F), @(60, 0xFF, 0xE6, 0x00), @(78, 0xFF, 0x8A, 0x00), @(100, 0xFF, 0x2A, 0x1F))
+function FechaDe($iso) { if (-not $iso) { return $null }; try { [DateTime]::Parse($iso).ToLocalTime() } catch { $null } }
+# tiempo que falta para que se renueve: corto '2h15m' / largo '2 h 15 min'
+function Falta($fin, [bool]$corto = $false) {
+  if (-not $fin) { return $null }
+  $t = $fin - (Get-Date); if ($t.TotalSeconds -le 0) { return $(if ($corto) { 'ya' } else { 'ahora' }) }
+  $d = [int][Math]::Floor($t.TotalDays); $h = $t.Hours; $m = $t.Minutes
+  if ($corto) { if ($d -gt 0) { "${d}d${h}h" } elseif ($h -gt 0) { "${h}h$('{0:D2}' -f $m)m" } else { "${m}m" } }
+  else { if ($d -gt 0) { "$d d $h h" } elseif ($h -gt 0) { "$h h $m min" } else { "$m min" } }
+}
 function ColorDe($p) {
   if ($script:viejo) { return $C_GRIS }
   $v = [Math]::Max(0.0, [Math]::Min(100.0, [Math]::Round([double]$p)))
@@ -205,14 +214,14 @@ function LeerUso($body) {
   $out = @()
   foreach ($p in @(@('five_hour', '5 h', 'Límite 5 h'), @('seven_day', 'Sem', 'Semana'))) {
     $o = $j.($p[0])
-    if ($o -and $null -ne $o.utilization) { $out += [pscustomobject]@{ n = $p[1]; largo = $p[2]; pct = [double]$o.utilization; ren = (Renueva $o.resets_at) } }
+    if ($o -and $null -ne $o.utilization) { $out += [pscustomobject]@{ n = $p[1]; largo = $p[2]; pct = [double]$o.utilization; ren = (Renueva $o.resets_at); fin = (FechaDe $o.resets_at) } }
   }
   if ($out.Count -eq 0 -and $j.limits) {   # plan B: formato nuevo con lista de límites
     foreach ($l in $j.limits) {
       if ($null -eq $l.percent) { continue }
       $n = if ($l.group -eq 'session') { '5 h' } elseif ($l.group -eq 'weekly') { 'Sem' } else { "$($l.kind)" }
       $lg = if ($n -eq '5 h') { 'Límite 5 h' } elseif ($n -eq 'Sem') { 'Semana' } else { "$($l.kind)" }
-      $out += [pscustomobject]@{ n = $n; largo = $lg; pct = [double]$l.percent; ren = (Renueva $l.resets_at) }
+      $out += [pscustomobject]@{ n = $n; largo = $lg; pct = [double]$l.percent; ren = (Renueva $l.resets_at); fin = (FechaDe $l.resets_at) }
     }
   }
   if ($out.Count) { , $out } else { $null }
@@ -260,7 +269,7 @@ function Metricas($m) {
   foreach ($l in $m.limits) {
     $n = switch ($l.kind) { 'five_hour' { '5 h' } 'seven_day' { 'Sem' } default { $l.kind } }
     $largo = switch ($l.kind) { 'five_hour' { 'Límite 5 h' } 'seven_day' { 'Semana' } default { $l.kind } }
-    $out += [pscustomobject]@{ n = $n; largo = $largo; pct = [double]$l.percentUsed; ren = (Renueva $l.resetsAt) }
+    $out += [pscustomobject]@{ n = $n; largo = $largo; pct = [double]$l.percentUsed; ren = (Renueva $l.resetsAt); fin = (FechaDe $l.resetsAt) }
   }
   $pct = $m.percent
   if ($null -eq $pct -and $m.tokens -and $m.window) { $pct = $m.tokens / $m.window * 100 }
@@ -284,7 +293,7 @@ function Tira($ms, $edad, $W, $conBotones, $conMetricas = $true) {
   if ($W -ge 230) { [void]$g.Children.Add((Colocar $info 1)) }
   $libre = $W - 14 - 40 - 115 - $(if ($conBotones) { 50 } else { 0 })
   $detalle = $libre -ge 420
-  $ancho = if ($detalle) { 140 } else { 64 }
+  $ancho = if ($detalle) { 140 } else { 104 }
   $cuantas = [Math]::Max(1, [Math]::Min($ms.Count, [Math]::Floor($libre / $ancho)))
   $sp = New-Object System.Windows.Controls.StackPanel
   $sp.Orientation = 'Horizontal'; $sp.VerticalAlignment = 'Center'
@@ -295,10 +304,14 @@ function Tira($ms, $edad, $W, $conBotones, $conMetricas = $true) {
     $f = New-Object System.Windows.Controls.StackPanel; $f.Orientation = 'Horizontal'
     [void]$f.Children.Add((Texto "$($x.n) " $C_GRIS2 10.5))
     [void]$f.Children.Add((Texto "$([Math]::Round($x.pct))%" $col 12 $true))
+    $fc = Falta $x.fin $true
+    if ($fc -and -not $detalle) { $tf = Texto " $fc" $C_GRIS 10; $tf.VerticalAlignment = 'Bottom'; $tf.ToolTip = "se renueva en $(Falta $x.fin)"; [void]$f.Children.Add($tf) }
     [void]$mm.Children.Add($f)
     if ($detalle) {
       $b = Barra $x.pct $col 3; $b.Width = 120; $b.Margin = '0,3,0,2'; [void]$mm.Children.Add($b)
-      if ($x.ren) { [void]$mm.Children.Add((Texto $x.ren $C_GRIS 9)) }
+      $fl = Falta $x.fin
+      $txt = if ($fl) { "se renueva en $fl" } else { $x.ren }
+      if ($txt) { [void]$mm.Children.Add((Texto $txt $C_GRIS 9)) }
     }
     [void]$sp.Children.Add($mm)
   }
@@ -319,7 +332,8 @@ function FilaBarras($ms, $W) {
     $s = New-Object System.Windows.Controls.StackPanel
     $s.Margin = $(if ($i -eq 0) { '0,0,6,0' } else { '6,0,6,0' })
     $h = New-Object System.Windows.Controls.Grid; Cols $h @('*', 'a')
-    [void]$h.Children.Add((Texto $x.n $C_GRIS2 10))
+    $fc = Falta $x.fin $true
+    [void]$h.Children.Add((Texto $(if ($fc) { "$($x.n) · $fc" } else { $x.n }) $C_GRIS2 10))
     [void]$h.Children.Add((Colocar (Texto "$([Math]::Round($x.pct))%" $col 11 $true) 1))
     [void]$s.Children.Add($h)
     $b = Barra $x.pct $col 4; $b.Margin = '0,4,0,0'; [void]$s.Children.Add($b)
@@ -333,7 +347,7 @@ function ListaMedia($ms, $W, $H) {
   $g = New-Object System.Windows.Controls.Grid
   $g.Margin = '2,2,2,4'
   $alto = $H - 12 - 6
-  $cuantas = [Math]::Max(1, [Math]::Min($ms.Count, [Math]::Floor($alto / 30)))
+  $cuantas = [Math]::Max(1, [Math]::Min($ms.Count, [Math]::Floor($alto / 40)))
   Filas $g (@('*') * $cuantas)
   $i = 0
   foreach ($x in $ms[0..($cuantas - 1)]) {
@@ -345,6 +359,8 @@ function ListaMedia($ms, $W, $H) {
     [void]$h.Children.Add((Colocar (Texto "$([Math]::Round($x.pct))%" $col 14 $true) 1))
     [void]$s.Children.Add($h)
     $b = Barra $x.pct $col 4; $b.Margin = '0,3,0,0'; [void]$s.Children.Add($b)
+    $fl = Falta $x.fin
+    if ($fl) { $tf = Texto "se renueva en $fl" $C_GRIS 9.5; $tf.Margin = '0,2,0,0'; [void]$s.Children.Add($tf) }
     [void]$g.Children.Add((Colocar $s 0 $i)); $i++
   }
   $g
@@ -365,7 +381,7 @@ function Detalle($ms, $maxAlto, $conSep = $true) {
     $r = New-Object System.Windows.Controls.Grid; $r.Margin = "0,$([Math]::Round(5 * $script:k)),0,0"; Cols $r @('*', 'a')
     $iz = New-Object System.Windows.Controls.StackPanel
     [void]$iz.Children.Add((Texto $x.largo $C_BLANCO 12 $false $FUENTE_UI))
-    $sub = if ($x.ren) { if ($x.n -eq 'Ctx') { $x.ren } else { "se renueva $($x.ren)" } } else { '' }
+    $sub = if ($x.fin) { "se renueva en $(Falta $x.fin)" } elseif ($x.ren) { $x.ren } else { '' }
     [void]$iz.Children.Add((Texto $sub $C_GRIS 9.5))
     [void]$r.Children.Add($iz)
     $p = Texto "$([Math]::Round($x.pct))%" $col 13 $true; $p.VerticalAlignment = 'Center'
@@ -396,7 +412,7 @@ function Alto($ms, $edad, $W, $H) {
   $t = New-Object System.Windows.Controls.Grid; $t.Margin = '2,6,0,0'; Cols $t @('*', 'a')
   $info = New-Object System.Windows.Controls.StackPanel
   [void]$info.Children.Add((Texto $principal.largo $C_BLANCO 16 $true $FUENTE_UI))
-  $sub = if ($principal.ren) { "se renueva $($principal.ren)" } else { '' }
+  $sub = if ($principal.fin) { "se renueva en $(Falta $principal.fin)" } else { '' }
   if ($edad) { $sub = if ($sub) { "$sub · act. $edad" } else { "act. $edad" } }
   [void]$info.Children.Add((Texto $sub $C_GRIS2 10))
   [void]$t.Children.Add($info)
@@ -510,7 +526,7 @@ function Actualizar([bool]$forzar = $false) {
   if ($datos) { try { $m = $datos | ConvertFrom-Json; $min = [Math]::Floor(((Get-Date) - [DateTime]::Parse($m.updatedAt).ToLocalTime()).TotalMinutes) } catch {} }
   $vivo = $script:api -and ((Get-Date) - $script:api.t).TotalMinutes -lt 5
   if ($vivo) { $min = [Math]::Floor(((Get-Date) - $script:api.t).TotalMinutes) }
-  $firma = "$modo|$datos|$min|$vivo|$($script:api.t)|$($script:apiEstado)|$([Math]::Round($W / 8))|$([Math]::Round($H / 8))"
+  $firma = "$((Get-Date).ToString('HHmm'))|$modo|$datos|$min|$vivo|$($script:api.t)|$($script:apiEstado)|$([Math]::Round($W / 8))|$([Math]::Round($H / 8))"
   if (-not $forzar -and $firma -eq $script:ultimo) { return }
   $script:ultimo = $firma
   $raiz.Children.Clear(); $linea.Children.Clear(); $script:k = 1.0
