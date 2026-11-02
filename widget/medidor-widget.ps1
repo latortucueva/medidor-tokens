@@ -440,7 +440,9 @@ function LogoTenido($color) {
     $c = [System.Windows.Media.ColorConverter]::ConvertFromString($color)
     for ($i = 0; $i -lt $px.Length; $i += 4) {
       $l = [Math]::Max($px[$i], [Math]::Max($px[$i + 1], $px[$i + 2])) / 255.0
-      $px[$i] = [byte]($c.B * $l); $px[$i + 1] = [byte]($c.G * $l); $px[$i + 2] = [byte]($c.R * $l)
+      # sin el disco oscuro: lo claro queda opaco y brillante, lo oscuro transparente
+      $a = [Math]::Min(1.0, [Math]::Max(0.0, ($l - 0.18) * 2.2)) * ($px[$i + 3] / 255.0)
+      $px[$i] = [byte]($c.B * $a); $px[$i + 1] = [byte]($c.G * $a); $px[$i + 2] = [byte]($c.R * $a); $px[$i + 3] = [byte](255 * $a)
     }
     $bmp = [System.Windows.Media.Imaging.BitmapSource]::Create($w, $h, 96, 96, ([System.Windows.Media.PixelFormats]::Bgra32), $null, $px, $paso)
     $bmp.Freeze(); $script:logosTenidos[$color] = $bmp; $bmp
@@ -470,7 +472,7 @@ function IconoDinamico($pct, $color) {
       $dc.DrawGeometry($null, $arco, $g)
     }
     $tort = LogoTenido $color
-    if ($tort) { $L = 46.0; $dc.DrawImage($tort, (New-Object System.Windows.Rect (($S - $L) / 2), (($S - $L) / 2), $L, $L)) }
+    if ($tort) { $L = 60.0; $dc.DrawImage($tort, (New-Object System.Windows.Rect (($S - $L) / 2), (($S - $L) / 2), $L, $L)) }
     $dc.Close()
     $rb = New-Object System.Windows.Media.Imaging.RenderTargetBitmap 64, 64, 96, 96, ([System.Windows.Media.PixelFormats]::Pbgra32)
     $rb.Render($dv); $rb.Freeze()
