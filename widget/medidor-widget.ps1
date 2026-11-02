@@ -438,7 +438,10 @@ function LogoTenido($color) {
     $w = $src.PixelWidth; $h = $src.PixelHeight; $paso = $w * 4
     $px = New-Object byte[] ($paso * $h); $src.CopyPixels($px, $paso, 0)
     $c = [System.Windows.Media.ColorConverter]::ConvertFromString($color)
+    $cx = $w / 2.0; $cy = $h / 2.0; $lim = 0.70 * $w / 2.0
     for ($i = 0; $i -lt $px.Length; $i += 4) {
+      $q = $i / 4; $dx = ($q % $w) - $cx; $dy = [Math]::Floor($q / $w) - $cy
+      if ($dx * $dx + $dy * $dy -gt $lim * $lim) { $px[$i] = 0; $px[$i + 1] = 0; $px[$i + 2] = 0; $px[$i + 3] = 0; continue }   # quita el aro del logo
       $l = [Math]::Max($px[$i], [Math]::Max($px[$i + 1], $px[$i + 2])) / 255.0
       # sin el disco oscuro: lo claro queda opaco y brillante, lo oscuro transparente
       $a = [Math]::Min(1.0, [Math]::Max(0.0, ($l - 0.18) * 2.2)) * ($px[$i + 3] / 255.0)
@@ -456,7 +459,7 @@ function IconoDinamico($pct, $color) {
     $S = 64.0; $w = 5.5; $r = ($S - 2 * 3 - $w) / 2; $c = $S / 2
     $dv = New-Object System.Windows.Media.DrawingVisual
     $dc = $dv.RenderOpen()
-    $dc.DrawRoundedRectangle((Pincel '#09090B'), $null, (New-Object System.Windows.Rect 0, 0, $S, $S), 14, 14)
+    $dc.DrawEllipse((Pincel '#09090B'), $null, (New-Object System.Windows.Point $c, $c), ($r + $w / 2), ($r + $w / 2))   # silueta circular, sin cuadrado
     $pista = New-Object System.Windows.Media.Pen (Pincel $C_PISTA), $w
     $dc.DrawEllipse($null, $pista, (New-Object System.Windows.Point $c, $c), $r, $r)
     $v = [Math]::Max(0.0, [Math]::Min(99.9, [double]$pct))
@@ -472,7 +475,7 @@ function IconoDinamico($pct, $color) {
       $dc.DrawGeometry($null, $arco, $g)
     }
     $tort = LogoTenido $color
-    if ($tort) { $L = 60.0; $dc.DrawImage($tort, (New-Object System.Windows.Rect (($S - $L) / 2), (($S - $L) / 2), $L, $L)) }
+    if ($tort) { $L = 66.0; $dc.DrawImage($tort, (New-Object System.Windows.Rect (($S - $L) / 2), (($S - $L) / 2), $L, $L)) }
     $dc.Close()
     $rb = New-Object System.Windows.Media.Imaging.RenderTargetBitmap 64, 64, 96, 96, ([System.Windows.Media.PixelFormats]::Pbgra32)
     $rb.Render($dv); $rb.Freeze()
