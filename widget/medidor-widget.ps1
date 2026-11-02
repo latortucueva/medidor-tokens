@@ -167,7 +167,20 @@ function Renueva($iso) {
   "$dia $($f.ToString('HH:mm'))"
 }
 $script:viejo = $false
-function ColorDe($p) { if ($script:viejo) { $C_GRIS } elseif ($p -ge 80) { $C_NARANJA } else { $C_VERDE } }
+# degradé progresivo: verde azulado -> verde -> verde amarillento -> amarillo -> naranja -> rojo
+$GRADIENTE = @(@(0, 0x00, 0xE5, 0xC8), @(25, 0x00, 0xFF, 0x66), @(45, 0x9B, 0xFF, 0x1F), @(60, 0xFF, 0xE6, 0x00), @(78, 0xFF, 0x8A, 0x00), @(100, 0xFF, 0x2A, 0x1F))
+function ColorDe($p) {
+  if ($script:viejo) { return $C_GRIS }
+  $v = [Math]::Max(0.0, [Math]::Min(100.0, [Math]::Round([double]$p)))
+  for ($i = 1; $i -lt $GRADIENTE.Count; $i++) {
+    $b = $GRADIENTE[$i]
+    if ($v -le $b[0]) {
+      $a = $GRADIENTE[$i - 1]; $t = ($v - $a[0]) / ($b[0] - $a[0])
+      return '#{0:X2}{1:X2}{2:X2}' -f [int]($a[1] + ($b[1] - $a[1]) * $t), [int]($a[2] + ($b[2] - $a[2]) * $t), [int]($a[3] + ($b[3] - $a[3]) * $t)
+    }
+  }
+  '#FF2A1F'
+}
 
 # ---------- uso en vivo desde Anthropic (endpoint interno, con autodiagnóstico) ----------
 # Consulta cada 90 s. Si falla: registra el motivo, avisa una vez, reintenta con espera creciente
