@@ -22,7 +22,7 @@ $logo = Join-Path $PSScriptRoot 'logo.png'
   </shell:WindowChrome.WindowChrome>
   <Border x:Name="Marco" CornerRadius="10" Background="#F20B0F0D" BorderBrush="#2A2A2E" BorderThickness="1" ClipToBounds="True">
     <Grid>
-      <Grid x:Name="Raiz" Margin="9,8,9,8"/>
+      <Grid x:Name="Raiz" Margin="7,6,7,6"/>
       <Grid x:Name="Linea" Height="2" VerticalAlignment="Bottom" Margin="10,0,10,1"/>
       <Grid x:Name="Chrome" VerticalAlignment="Top" Height="20" Margin="8,3,8,0" Visibility="Collapsed"/>
       <TextBlock x:Name="Grip" Text="◢" Foreground="#3F3F46" FontSize="9" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,3,2" Visibility="Collapsed" IsHitTestVisible="False"/>
@@ -175,11 +175,11 @@ function Tira($ms, $edad, $W, $conBotones) {
   Cols $g @(40, '*', 'a', 'a')
   [void]$g.Children.Add((Miniatura 38))
   $info = New-Object System.Windows.Controls.StackPanel
-  $info.VerticalAlignment = 'Center'; $info.Margin = '9,0,6,0'
+  $info.VerticalAlignment = 'Center'; $info.Margin = '7,0,4,0'
   [void]$info.Children.Add((Texto 'Claude · uso' $C_BLANCO 13 $false $FUENTE_UI))
   if ($edad) { [void]$info.Children.Add((Texto "act. $edad" $C_GRIS2 10)) }
-  [void]$g.Children.Add((Colocar $info 1))
-  $libre = $W - 18 - 40 - 115 - $(if ($conBotones) { 50 } else { 0 })
+  if ($W -ge 230) { [void]$g.Children.Add((Colocar $info 1)) }
+  $libre = $W - 14 - 40 - 115 - $(if ($conBotones) { 50 } else { 0 })
   $detalle = $libre -ge 420
   $ancho = if ($detalle) { 140 } else { 64 }
   $cuantas = [Math]::Max(1, [Math]::Min($ms.Count, [Math]::Floor($libre / $ancho)))
@@ -188,7 +188,7 @@ function Tira($ms, $edad, $W, $conBotones) {
   foreach ($x in $ms[0..($cuantas - 1)]) {
     $col = ColorDe $x.pct
     $mm = New-Object System.Windows.Controls.StackPanel
-    $mm.Margin = '10,0,4,0'; $mm.VerticalAlignment = 'Center'
+    $mm.Margin = '8,0,2,0'; $mm.VerticalAlignment = 'Center'
     $f = New-Object System.Windows.Controls.StackPanel; $f.Orientation = 'Horizontal'
     [void]$f.Children.Add((Texto "$($x.n) " $C_GRIS2 10.5))
     [void]$f.Children.Add((Texto "$([Math]::Round($x.pct))%" $col 12 $true))
@@ -207,8 +207,8 @@ function Tira($ms, $edad, $W, $conBotones) {
 # ---------- fila de barras (altura media) ----------
 function FilaBarras($ms, $W) {
   $g = New-Object System.Windows.Controls.Grid
-  $g.Margin = '0,10,0,0'
-  $cuantas = [Math]::Max(1, [Math]::Min($ms.Count, [Math]::Floor(($W - 18) / 80)))
+  $g.Margin = '0,6,0,0'
+  $cuantas = [Math]::Max(1, [Math]::Min($ms.Count, [Math]::Floor(($W - 14) / 80)))
   Cols $g (@('*') * $cuantas)
   $i = 0
   foreach ($x in $ms[0..($cuantas - 1)]) {
@@ -228,16 +228,16 @@ function FilaBarras($ms, $W) {
 # ---------- detalle (lista, como la fila de reproducción) ----------
 function Detalle($ms, $maxAlto) {
   $s = New-Object System.Windows.Controls.StackPanel
-  $s.Margin = '0,8,0,0'
+  $s.Margin = '0,5,0,0'
   $sep = New-Object System.Windows.Controls.Grid; Cols $sep @('*', 'a', '*')
   foreach ($c in 0, 2) { $l = New-Object System.Windows.Controls.Border; $l.Height = 1; $l.Background = Pincel '#2A2A2E'; [void]$sep.Children.Add((Colocar $l $c)) }
   $tt = Texto ' DETALLE ' $C_GRIS 9; [void]$sep.Children.Add((Colocar $tt 1))
   [void]$s.Children.Add($sep)
   $usado = 22
   foreach ($x in $ms) {
-    if ($usado + 40 -gt $maxAlto) { break }
+    if ($usado + 34 -gt $maxAlto) { break }
     $col = ColorDe $x.pct
-    $r = New-Object System.Windows.Controls.Grid; $r.Margin = '0,7,0,0'; Cols $r @('*', 'a')
+    $r = New-Object System.Windows.Controls.Grid; $r.Margin = '0,4,0,0'; Cols $r @('*', 'a')
     $iz = New-Object System.Windows.Controls.StackPanel
     [void]$iz.Children.Add((Texto $x.largo $C_BLANCO 12 $false $FUENTE_UI))
     $sub = if ($x.ren) { if ($x.n -eq 'Ctx') { $x.ren } else { "se renueva $($x.ren)" } } else { '' }
@@ -247,7 +247,7 @@ function Detalle($ms, $maxAlto) {
     [void]$r.Children.Add((Colocar $p 1))
     [void]$s.Children.Add($r)
     $b = Barra $x.pct $col 3; $b.Margin = '0,4,0,0'; [void]$s.Children.Add($b)
-    $usado += 40
+    $usado += 34
   }
   $s
 }
@@ -256,15 +256,15 @@ function Detalle($ms, $maxAlto) {
 function Alto($ms, $edad, $W, $H) {
   $principal = $ms[0]
   $g = New-Object System.Windows.Controls.Grid
-  $g.Margin = '0,14,0,0'
-  $anchoUtil = $W - 18; $altoUtil = $H - 16 - 14
-  $conDetalle = $altoUtil -ge 330 -and $ms.Count -gt 1
-  $tam = [Math]::Min($anchoUtil - 20, $altoUtil - 62 - $(if ($conDetalle) { 30 + 40 * ($ms.Count - 1) } else { 0 }))
-  $tam = [Math]::Max(70, [Math]::Min($tam, 260))
+  $g.Margin = '0,10,0,0'
+  $anchoUtil = $W - 14; $altoUtil = $H - 12 - 10
+  $conDetalle = $altoUtil -ge 300 -and $ms.Count -gt 1
+  $tam = [Math]::Min($anchoUtil - 8, $altoUtil - 50 - $(if ($conDetalle) { 22 + 34 * ($ms.Count - 1) } else { 0 }))
+  $tam = [Math]::Max(70, [Math]::Min($tam, 300))
   $s = New-Object System.Windows.Controls.StackPanel
   $a = Anillo $principal.pct (ColorDe $principal.pct) $tam $principal.n; $a.HorizontalAlignment = 'Center'
   [void]$s.Children.Add($a)
-  $t = New-Object System.Windows.Controls.Grid; $t.Margin = '2,10,0,0'; Cols $t @('*', 'a')
+  $t = New-Object System.Windows.Controls.Grid; $t.Margin = '2,6,0,0'; Cols $t @('*', 'a')
   $info = New-Object System.Windows.Controls.StackPanel
   [void]$info.Children.Add((Texto $principal.largo $C_BLANCO 16 $true $FUENTE_UI))
   $sub = if ($principal.ren) { "se renueva $($principal.ren)" } else { '' }
@@ -272,7 +272,8 @@ function Alto($ms, $edad, $W, $H) {
   [void]$info.Children.Add((Texto $sub $C_GRIS2 10))
   [void]$t.Children.Add($info)
   [void]$s.Children.Add($t)
-  if ($conDetalle) { [void]$s.Children.Add((Detalle @($ms | Select-Object -Skip 1) ($altoUtil - $tam - 60))) }
+  if ($conDetalle) { [void]$s.Children.Add((Detalle @($ms | Select-Object -Skip 1) ($altoUtil - $tam - 48))) }
+  $s.VerticalAlignment = 'Center'
   [void]$g.Children.Add($s)
   $g
 }
@@ -280,13 +281,13 @@ function Alto($ms, $edad, $W, $H) {
 # ---------- vista alta y ancha: anillo a la izquierda, detalle a la derecha ----------
 function AltoAncho($ms, $edad, $W, $H) {
   $g = New-Object System.Windows.Controls.Grid
-  $g.Margin = '0,14,0,0'
+  $g.Margin = '0,10,0,0'
   Cols $g @('a', '*')
-  $tam = [Math]::Max(70, [Math]::Min($H - 16 - 14 - 10, 220))
+  $tam = [Math]::Max(70, [Math]::Min($H - 12 - 10 - 4, 260))
   $iz = New-Object System.Windows.Controls.StackPanel; $iz.VerticalAlignment = 'Center'
   [void]$iz.Children.Add((Anillo $ms[0].pct (ColorDe $ms[0].pct) $tam $ms[0].n))
   [void]$g.Children.Add($iz)
-  $de = New-Object System.Windows.Controls.StackPanel; $de.Margin = '16,0,0,0'; $de.VerticalAlignment = 'Center'
+  $de = New-Object System.Windows.Controls.StackPanel; $de.Margin = '12,0,0,0'; $de.VerticalAlignment = 'Center'
   [void]$de.Children.Add((Texto 'Claude · uso' $C_BLANCO 16 $true $FUENTE_UI))
   if ($edad) { [void]$de.Children.Add((Texto "act. $edad" $C_GRIS2 10)) }
   [void]$de.Children.Add((Detalle $ms ($H - 80)))
@@ -329,7 +330,7 @@ function Actualizar([bool]$forzar = $false) {
     'tira' { [void]$raiz.Children.Add((Tira $ms $edad $W $true)) }
     'media' {
       $s = New-Object System.Windows.Controls.StackPanel
-      $s.Margin = '0,12,0,0'
+      $s.Margin = '0,8,0,0'; $s.VerticalAlignment = 'Center'
       [void]$s.Children.Add((Tira $ms $edad $W $false))
       [void]$s.Children.Add((FilaBarras $ms $W))
       [void]$raiz.Children.Add($s)
