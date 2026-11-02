@@ -1,0 +1,5 @@
+{
+  "name": "latortucueva",
+  "owner": { "name": "latortucueva" },
+  "plugins": [{ "name": "medidor-tokens", "source": "./" }]
+}
