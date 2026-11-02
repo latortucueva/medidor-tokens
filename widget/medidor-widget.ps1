@@ -381,7 +381,7 @@ function Detalle($ms, $maxAlto, $conSep = $true) {
     $r = New-Object System.Windows.Controls.Grid; $r.Margin = "0,$([Math]::Round(5 * $script:k)),0,0"; Cols $r @('*', 'a')
     $iz = New-Object System.Windows.Controls.StackPanel
     [void]$iz.Children.Add((Texto $x.largo $C_BLANCO 12 $false $FUENTE_UI))
-    $sub = if ($x.fin) { "se renueva en $(Falta $x.fin)" } elseif ($x.ren) { $x.ren } else { '' }
+    $sub = if ($x.ren) { if ($x.n -eq 'Ctx') { $x.ren } else { "se renueva $($x.ren)" } } else { '' }   # vistas grandes: hora exacta
     [void]$iz.Children.Add((Texto $sub $C_GRIS 9.5))
     [void]$r.Children.Add($iz)
     $p = Texto "$([Math]::Round($x.pct))%" $col 13 $true; $p.VerticalAlignment = 'Center'
@@ -412,7 +412,7 @@ function Alto($ms, $edad, $W, $H) {
   $t = New-Object System.Windows.Controls.Grid; $t.Margin = '2,6,0,0'; Cols $t @('*', 'a')
   $info = New-Object System.Windows.Controls.StackPanel
   [void]$info.Children.Add((Texto $principal.largo $C_BLANCO 16 $true $FUENTE_UI))
-  $sub = if ($principal.fin) { "se renueva en $(Falta $principal.fin)" } else { '' }
+  $sub = if ($principal.ren) { "se renueva $($principal.ren)" } else { '' }
   if ($edad) { $sub = if ($sub) { "$sub · act. $edad" } else { "act. $edad" } }
   [void]$info.Children.Add((Texto $sub $C_GRIS2 10))
   [void]$t.Children.Add($info)
