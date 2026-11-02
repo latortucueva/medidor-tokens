@@ -17,3 +17,7 @@ claude plugin install medidor-tokens --marketplace latortucueva/medidor-tokens
 ```
 
 Respondé `y` para agregar el marketplace y elegí el alcance (usuario, para todas tus sesiones).
+
+## Widget flotante (Windows)
+
+El plugin guarda el uso en `%USERPROFILE%\.claude\medidor-tokens.json` después de cada respuesta. La carpeta `widget/` trae una ventanita flotante, siempre encima de las demás apps, que lee ese archivo: hacé doble clic en `abrir-medidor.cmd`. Se arrastra con el mouse y se cierra con la ✕.

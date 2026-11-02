@@ -38,6 +38,13 @@ async function guardar($: EngineInterface, e: SessionUsage | SessionMeasureInput
     usd: e.cost?.usd ?? null,
   }
   await update($, medida, () => m)
+  try {
+    const home = (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME'))
+    if (home) {
+      const sep = home.includes('\\') ? '\\' : '/'
+      await $.fs.write(`${home}${sep}.claude${sep}medidor-tokens.json`, JSON.stringify({ ...m, updatedAt: new Date().toISOString() }))
+    }
+  } catch {}
 }
 
 export const register: Register = on => {
