@@ -10,13 +10,18 @@ const k = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : `${n}`)
 const nombre = (kind: string) =>
   kind === 'five_hour' ? 'Límite 5 h' : kind === 'seven_day' ? 'Semana' : kind
 
+const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb']
+
 const hora = (iso: string | null) => {
   if (!iso) return ''
   const d = new Date(iso)
   if (isNaN(d.getTime())) return ''
   const hh = String(d.getHours()).padStart(2, '0')
   const mm = String(d.getMinutes()).padStart(2, '0')
-  return ` (se renueva ${hh}:${mm})`
+  const hoy = new Date()
+  const esHoy = d.getFullYear() === hoy.getFullYear() && d.getMonth() === hoy.getMonth() && d.getDate() === hoy.getDate()
+  const dia = esHoy ? 'hoy' : `${DIAS[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}`
+  return ` (se renueva ${dia} ${hh}:${mm})`
 }
 
 const barra = (p: number) => {
