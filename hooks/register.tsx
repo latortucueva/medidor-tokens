@@ -57,6 +57,20 @@ export const register: Register = on => {
     return next(e)
   })
 
+  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
+    const m = await read($, medida)
+    if (m === null) return next(e)
+    const pct = m.percent ?? (m.tokens !== null && m.window ? (m.tokens / m.window) * 100 : null)
+    const partes: string[] = []
+    if (pct !== null) partes.push(`ctx ${Math.round(pct)}%`)
+    for (const l of m.limits) {
+      const n = l.kind === 'five_hour' ? '5h' : l.kind === 'seven_day' ? 'sem' : l.kind
+      partes.push(`${n} ${Math.round(l.percentUsed)}%`)
+    }
+    if (partes.length === 0) return next(e)
+    return next({ ...e, props: { ...e.props, modes: [partes.join(' · '), ...e.props.modes] } })
+  })
+
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const m = await read($, medida)
     if (m === null || e.props.hasSurvey) return next(e)

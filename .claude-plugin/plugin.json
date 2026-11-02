@@ -1,6 +1,6 @@
 {
   "name": "medidor-tokens",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Barra sobre el prompt con el uso de contexto y los límites de uso de la sesión",
   "types": "./types/index.d.ts",
   "author": {
