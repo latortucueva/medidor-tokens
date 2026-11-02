@@ -146,8 +146,11 @@ function Botones {
 }
 function Miniatura($tam) {
   $th = New-Object System.Windows.Controls.Border
-  $th.Width = $tam; $th.Height = $tam; $th.CornerRadius = 6; $th.Background = Pincel '#102A1C'
-  if (Test-Path $logo) {
+  $th.Width = $tam; $th.Height = $tam
+  if ($script:iconoBmp) {   # mismo ícono dinámico de la barra de tareas
+    $img = New-Object System.Windows.Controls.Image; $img.Source = $script:iconoBmp
+    [System.Windows.Media.RenderOptions]::SetBitmapScalingMode($img, 'HighQuality'); $th.Child = $img
+  } elseif (Test-Path $logo) {
     $img = New-Object System.Windows.Controls.Image
     $bm = New-Object System.Windows.Media.Imaging.BitmapImage
     $bm.BeginInit(); $bm.UriSource = [Uri]$logo; $bm.CacheOption = 'OnLoad'; $bm.EndInit()
@@ -426,7 +429,7 @@ function Modo($w, $h) {
 }
 
 # ---------- ícono dinámico: el anillo del ícono sigue al límite principal ----------
-$script:iconoFirma = ''
+$script:iconoFirma = ''; $script:iconoBmp = $null
 $script:logoBmp = $null
 if (Test-Path $logo) { try { $script:logoBmp = New-Object System.Windows.Media.Imaging.BitmapImage; $script:logoBmp.BeginInit(); $script:logoBmp.UriSource = [Uri]$logo; $script:logoBmp.DecodePixelWidth = 128; $script:logoBmp.CacheOption = 'OnLoad'; $script:logoBmp.EndInit() } catch { $script:logoBmp = $null } }
 $script:logosTenidos = @{}
@@ -477,8 +480,8 @@ function IconoDinamico($pct, $color) {
     $tort = LogoTenido $color
     if ($tort) { $L = 66.0; $dc.DrawImage($tort, (New-Object System.Windows.Rect (($S - $L) / 2), (($S - $L) / 2), $L, $L)) }
     $dc.Close()
-    $rb = New-Object System.Windows.Media.Imaging.RenderTargetBitmap 64, 64, 96, 96, ([System.Windows.Media.PixelFormats]::Pbgra32)
-    $rb.Render($dv); $rb.Freeze()
+    $rb = New-Object System.Windows.Media.Imaging.RenderTargetBitmap 192, 192, 288, 288, ([System.Windows.Media.PixelFormats]::Pbgra32)
+    $rb.Render($dv); $rb.Freeze(); $script:iconoBmp = $rb
     $ventana.Icon = $rb
     $ventana.Title = "Claude $([Math]::Round($pct))%"
   } catch {}
@@ -506,6 +509,7 @@ function Actualizar([bool]$forzar = $false) {
   if (-not $m -and -not $vivo) { [void]$raiz.Children.Add((Vacio)); return }
   $ms = if ($vivo) { @($script:api.ms) + @(@(if ($m) { Metricas $m }) | Where-Object { $_.n -eq 'Ctx' }) } else { @(Metricas $m) }
   if ($ms.Count -eq 0) { [void]$raiz.Children.Add((Vacio)); return }
+  IconoDinamico $ms[0].pct (ColorDe $ms[0].pct)
   switch ($modo) {
     'tira' { [void]$raiz.Children.Add((Tira $ms $edad $W $true)) }
     'media' {
@@ -521,7 +525,6 @@ function Actualizar([bool]$forzar = $false) {
   }
   # línea de progreso abajo (límite principal), como la de la canción
   $script:k = 1.0
-  IconoDinamico $ms[0].pct (ColorDe $ms[0].pct)
   $l = Barra $ms[0].pct (ColorDe $ms[0].pct) 2
   $l.Children[0].Background = Pincel '#00000000'
   [void]$linea.Children.Add($l)
