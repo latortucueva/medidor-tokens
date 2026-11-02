@@ -50,13 +50,21 @@ function Fila($nombre, $pct, $detalle) {
   }
   $t = New-Object System.Windows.Controls.TextBlock
   $t.Text = $nombre; $t.Foreground = Pincel '#FAFAFA'; $t.FontFamily = 'JetBrains Mono, Consolas'; $t.FontSize = 11
-  $fondo = New-Object System.Windows.Controls.Border
-  $fondo.Height = 7; $fondo.CornerRadius = 3.5; $fondo.Background = Pincel '#27272A'; $fondo.VerticalAlignment = 'Center'
+  $v = [Math]::Max(0.0, [Math]::Min(100.0, [double]$pct))
+  $fondo = New-Object System.Windows.Controls.Grid
+  $fondo.Height = 7; $fondo.VerticalAlignment = 'Center'; $fondo.Margin = '0,0,6,0'
   [System.Windows.Controls.Grid]::SetColumn($fondo, 1)
+  $pista = New-Object System.Windows.Controls.Border
+  $pista.CornerRadius = 3.5; $pista.Background = Pincel '#27272A'
+  [void]$fondo.Children.Add($pista)
+  $relleno = New-Object System.Windows.Controls.Grid
+  $c1 = New-Object System.Windows.Controls.ColumnDefinition; $c1.Width = [System.Windows.GridLength]::new([Math]::Max($v, 0.001), 'Star')
+  $c2 = New-Object System.Windows.Controls.ColumnDefinition; $c2.Width = [System.Windows.GridLength]::new([Math]::Max(100 - $v, 0.001), 'Star')
+  $relleno.ColumnDefinitions.Add($c1); $relleno.ColumnDefinitions.Add($c2)
   $barra = New-Object System.Windows.Controls.Border
-  $barra.Height = 7; $barra.CornerRadius = 3.5; $barra.Background = Pincel $color; $barra.HorizontalAlignment = 'Left'
-  $barra.Width = [Math]::Max(0, [Math]::Min(1, $pct / 100)) * 176
-  $fondo.Child = $barra
+  $barra.CornerRadius = 3.5; $barra.Background = Pincel $color
+  [void]$relleno.Children.Add($barra)
+  [void]$fondo.Children.Add($relleno)
   $p = New-Object System.Windows.Controls.TextBlock
   $p.Text = "$([Math]::Round($pct))%"; $p.Foreground = Pincel $color; $p.FontFamily = 'JetBrains Mono, Consolas'; $p.FontSize = 11
   $p.HorizontalAlignment = 'Right'
