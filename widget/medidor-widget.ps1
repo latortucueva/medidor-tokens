@@ -7,16 +7,21 @@ $archivo = Join-Path $env:USERPROFILE '.claude\medidor-tokens.json'
 [xml]$xaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Medidor Claude" Width="300" SizeToContent="Height"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="Medidor Claude" Width="300" Height="125" MinWidth="220" MinHeight="90"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
-        Topmost="True" ShowInTaskbar="False" ResizeMode="NoResize">
-  <Border CornerRadius="10" Background="#F209090B" BorderBrush="#00FF66" BorderThickness="1" Padding="12,9,12,10">
+        Topmost="True" ShowInTaskbar="True" ResizeMode="CanResize">
+  <shell:WindowChrome.WindowChrome>
+    <shell:WindowChrome ResizeBorderThickness="7" CaptionHeight="0" CornerRadius="10" GlassFrameThickness="0" UseAeroCaptionButtons="False"/>
+  </shell:WindowChrome.WindowChrome>
+  <Border CornerRadius="10" Background="#F209090B" Margin="0" BorderBrush="#00FF66" BorderThickness="1" Padding="12,9,12,10">
     <StackPanel>
       <Grid Margin="0,0,0,6">
         <TextBlock Text="CLAUDE · USO" Foreground="#00FF66" FontFamily="JetBrains Mono, Consolas" FontSize="11" FontWeight="Bold"/>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
           <TextBlock x:Name="Edad" Foreground="#71717A" FontFamily="JetBrains Mono, Consolas" FontSize="10" Margin="0,1,10,0"/>
-          <TextBlock x:Name="Cerrar" Text="✕" Foreground="#A1A1AA" FontSize="11" Cursor="Hand"/>
+          <TextBlock x:Name="Minimizar" Text="–" Foreground="#A1A1AA" FontSize="13" Margin="0,-3,10,0" Cursor="Hand" ToolTip="Minimizar"/>
+          <TextBlock x:Name="Cerrar" Text="✕" Foreground="#A1A1AA" FontSize="11" Cursor="Hand" ToolTip="Cerrar"/>
         </StackPanel>
       </Grid>
       <StackPanel x:Name="Filas"/>
@@ -29,12 +34,15 @@ $ventana = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReade
 $filas = $ventana.FindName('Filas')
 $edad = $ventana.FindName('Edad')
 $ventana.FindName('Cerrar').Add_MouseLeftButtonUp({ $ventana.Close() })
-$ventana.Add_MouseLeftButtonDown({ param($s, $e) if ($e.OriginalSource.Text -ne '✕') { $ventana.DragMove() } })
+$ventana.FindName('Minimizar').Add_MouseLeftButtonUp({ $ventana.WindowState = 'Minimized' })
+$ventana.Add_MouseLeftButtonDown({ param($s, $e) if ($e.OriginalSource.Text -notin @('✕', '–') -and $e.ButtonState -eq 'Pressed') { try { $ventana.DragMove() } catch {} } })
+# al volver desde la barra de tareas, seguir arriba de todo
+$ventana.Add_StateChanged({ if ($ventana.WindowState -eq 'Normal') { $ventana.Topmost = $true } })
 
 # posicion inicial: abajo a la derecha, sobre la barra de tareas
 $area = [System.Windows.SystemParameters]::WorkArea
 $ventana.Left = $area.Right - 316
-$ventana.Top = $area.Bottom - 150
+$ventana.Top = $area.Bottom - 160
 
 $conv = New-Object System.Windows.Media.BrushConverter
 function Pincel($hex) { $conv.ConvertFromString($hex) }
