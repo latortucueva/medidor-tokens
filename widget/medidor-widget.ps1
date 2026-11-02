@@ -22,9 +22,10 @@ $logo = Join-Path $PSScriptRoot 'logo.png'
   </shell:WindowChrome.WindowChrome>
   <Border x:Name="Marco" CornerRadius="10" Background="#F20B0F0D" BorderBrush="#2A2A2E" BorderThickness="1" ClipToBounds="True">
     <Grid>
-      <Grid x:Name="Raiz" Margin="7,6,7,6"/>
+      <Grid x:Name="Raiz" Margin="7,6,7,6" ClipToBounds="True"/>
       <Grid x:Name="Linea" Height="2" VerticalAlignment="Bottom" Margin="10,0,10,1"/>
       <Grid x:Name="Chrome" VerticalAlignment="Top" Height="20" Margin="8,3,8,0" Visibility="Collapsed"/>
+      <Ellipse x:Name="Punto" Width="6" Height="6" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,5,5,0" Fill="#3F3F46"/>
       <TextBlock x:Name="Grip" Text="◢" Foreground="#3F3F46" FontSize="9" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,3,2" Visibility="Collapsed" IsHitTestVisible="False"/>
     </Grid>
   </Border>
@@ -35,6 +36,8 @@ $ventana = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReade
 $raiz = $ventana.FindName('Raiz'); $marco = $ventana.FindName('Marco')
 $linea = $ventana.FindName('Linea'); $chrome = $ventana.FindName('Chrome'); $grip = $ventana.FindName('Grip')
 $area = [System.Windows.SystemParameters]::WorkArea
+$punto = $ventana.FindName('Punto')
+if (Test-Path $logo) { try { $ventana.Icon = [System.Windows.Media.Imaging.BitmapFrame]::Create([Uri]$logo) } catch {} }
 $ventana.Left = $area.Right - 316; $ventana.Top = $area.Bottom - 74
 
 $conv = New-Object System.Windows.Media.BrushConverter
@@ -42,9 +45,10 @@ function Pincel($hex) { $conv.ConvertFromString($hex) }
 $FUENTE_MONO = 'JetBrains Mono, Consolas'; $FUENTE_UI = 'Segoe UI Semibold, Segoe UI'
 $C_VERDE = '#00FF66'; $C_NARANJA = '#FF4500'; $C_BLANCO = '#FAFAFA'; $C_GRIS = '#71717A'; $C_GRIS2 = '#A1A1AA'; $C_PISTA = '#27272A'; $C_TARJ = '#121815'
 
+$script:k = 1.0   # escala de texto/barras en las vistas altas
 function Texto($txt, $color, $tam, $negrita = $false, $fuente = $FUENTE_MONO) {
   $t = New-Object System.Windows.Controls.TextBlock
-  $t.Text = $txt; $t.Foreground = Pincel $color; $t.FontFamily = $fuente; $t.FontSize = $tam
+  $t.Text = $txt; $t.Foreground = Pincel $color; $t.FontFamily = $fuente; $t.FontSize = $tam * $script:k
   $t.TextTrimming = 'CharacterEllipsis'
   if ($negrita) { $t.FontWeight = 'Bold' }
   $t
@@ -106,6 +110,7 @@ function Anillo($pct, $color, $tam, $etiqueta) {
     $arco.Effect = New-Object System.Windows.Media.Effects.DropShadowEffect -Property @{ Color = [System.Windows.Media.ColorConverter]::ConvertFromString($color); BlurRadius = 14; ShadowDepth = 0; Opacity = 0.55 }
     [void]$cv.Children.Add($arco)
   }
+  $kk = $script:k; $script:k = 1.0
   $centro = New-Object System.Windows.Controls.StackPanel
   $centro.HorizontalAlignment = 'Center'; $centro.VerticalAlignment = 'Center'
   $n = Texto "$([Math]::Round([double]$pct))%" $C_BLANCO ([Math]::Max(14, $tam * 0.2)) $true; $n.HorizontalAlignment = 'Center'
@@ -113,6 +118,7 @@ function Anillo($pct, $color, $tam, $etiqueta) {
   $e = Texto $etiqueta $C_GRIS2 ([Math]::Max(9, $tam * 0.065)); $e.HorizontalAlignment = 'Center'
   [void]$centro.Children.Add($e)
   [void]$cv.Children.Add($centro)
+  $script:k = $kk
   $cv
 }
 
@@ -150,7 +156,80 @@ function Renueva($iso) {
   $dia = if ($f.Date -eq (Get-Date).Date) { 'hoy' } else { "$($dias[[int]$f.DayOfWeek]) $($f.Day)/$($f.Month)" }
   "$dia $($f.ToString('HH:mm'))"
 }
-function ColorDe($p) { if ($p -ge 80) { $C_NARANJA } else { $C_VERDE } }
+$script:viejo = $false
+function ColorDe($p) { if ($script:viejo) { $C_GRIS } elseif ($p -ge 80) { $C_NARANJA } else { $C_VERDE } }
+
+# ---------- uso en vivo desde Anthropic (endpoint interno, con autodiagnóstico) ----------
+# Consulta cada 90 s. Si falla: registra el motivo, avisa una vez, reintenta con espera creciente
+# y mientras tanto usa el archivo del plugin. Cuando vuelve a andar, se recupera solo.
+Add-Type -AssemblyName System.Net.Http, System.Windows.Forms, System.Drawing
+$http = New-Object System.Net.Http.HttpClient; $http.Timeout = [TimeSpan]::FromSeconds(15)
+$credFile = Join-Path $env:USERPROFILE '.claude\.credentials.json'
+$logFile = Join-Path $env:USERPROFILE '.claude\medidor-salud.log'
+$URL_USO = 'https://api.anthropic.com/api/oauth/usage'
+$script:api = $null; $script:apiEstado = 'iniciando'; $script:apiMotivo = 'conectando…'
+$script:tarea = $null; $script:proxima = Get-Date; $script:fallos = 0; $script:avisado = ''
+$aviso = New-Object System.Windows.Forms.NotifyIcon
+$aviso.Icon = [System.Drawing.SystemIcons]::Information; $aviso.Text = 'Medidor Claude'
+function Log($t) { try { Add-Content -Path $logFile -Value "$(Get-Date -Format s) $t" -Encoding UTF8 } catch {} }
+function Avisar($t) {
+  if ($script:avisado -eq $t) { return }; $script:avisado = $t
+  try { $aviso.Visible = $true; $aviso.ShowBalloonTip(8000, 'Medidor Claude', $t, 'Warning') } catch {}
+}
+function LeerUso($body) {
+  try { $j = $body | ConvertFrom-Json } catch { return $null }
+  $out = @()
+  foreach ($p in @(@('five_hour', '5 h', 'Límite 5 h'), @('seven_day', 'Sem', 'Semana'))) {
+    $o = $j.($p[0])
+    if ($o -and $null -ne $o.utilization) { $out += [pscustomobject]@{ n = $p[1]; largo = $p[2]; pct = [double]$o.utilization; ren = (Renueva $o.resets_at) } }
+  }
+  if ($out.Count -eq 0 -and $j.limits) {   # plan B: formato nuevo con lista de límites
+    foreach ($l in $j.limits) {
+      if ($null -eq $l.percent) { continue }
+      $n = if ($l.group -eq 'session') { '5 h' } elseif ($l.group -eq 'weekly') { 'Sem' } else { "$($l.kind)" }
+      $lg = if ($n -eq '5 h') { 'Límite 5 h' } elseif ($n -eq 'Sem') { 'Semana' } else { "$($l.kind)" }
+      $out += [pscustomobject]@{ n = $n; largo = $lg; pct = [double]$l.percent; ren = (Renueva $l.resets_at) }
+    }
+  }
+  if ($out.Count) { , $out } else { $null }
+}
+function MarcarFallo($m) {
+  $script:fallos++
+  if ($script:apiMotivo -ne $m) { Log "FALLO: $m" }
+  $script:apiEstado = 'falla'; $script:apiMotivo = $m
+  $esp = [Math]::Min(900, 90 * [Math]::Pow(2, [Math]::Min($script:fallos - 1, 3)))
+  $script:proxima = (Get-Date).AddSeconds($esp)
+  if ($script:fallos -ge 3) { Avisar "No puedo leer el uso en vivo: $m. Sigo con el dato de Claude Code y reintento solo." }
+}
+function PedirApi {
+  if ($script:tarea -or (Get-Date) -lt $script:proxima) { return }
+  $tok = $null
+  try { $tok = (Get-Content $credFile -Raw | ConvertFrom-Json).claudeAiOauth.accessToken } catch {}
+  if (-not $tok) { MarcarFallo 'no encuentro la sesión de Claude Code en esta PC'; return }
+  try {
+    $req = New-Object System.Net.Http.HttpRequestMessage ([System.Net.Http.HttpMethod]::Get), $URL_USO
+    [void]$req.Headers.TryAddWithoutValidation('Authorization', "Bearer $tok")
+    [void]$req.Headers.TryAddWithoutValidation('anthropic-beta', 'oauth-2025-04-20')
+    $script:tarea = $http.SendAsync($req)
+  } catch { MarcarFallo 'no pude armar la consulta' }
+}
+function RevisarApi {
+  $t = $script:tarea
+  if (-not $t -or -not $t.IsCompleted) { return }
+  $script:tarea = $null
+  if ($t.IsFaulted -or $t.IsCanceled) { MarcarFallo 'sin conexión con api.anthropic.com'; return }
+  $r = $t.Result; $cod = [int]$r.StatusCode
+  if ($cod -eq 401 -or $cod -eq 403) { MarcarFallo 'sesión vencida: abrí Claude Code y se renueva sola'; return }
+  if ($cod -eq 404 -or $cod -eq 410) { MarcarFallo "Anthropic cerró o movió el endpoint ($cod)"; return }
+  if ($cod -ne 200) { MarcarFallo "el endpoint respondió $cod"; return }
+  $ms = LeerUso ($r.Content.ReadAsStringAsync().Result)
+  if (-not $ms) { MarcarFallo 'cambió el formato de la respuesta'; return }
+  if ($script:apiEstado -eq 'falla') { Log 'RECUPERADO: el endpoint volvió a funcionar'; if ($script:avisado) { Avisar 'El uso en vivo volvió a funcionar.' } }
+  elseif ($script:apiEstado -eq 'iniciando') { Log 'OK: uso en vivo funcionando' }
+  $script:api = [pscustomobject]@{ ms = $ms; t = Get-Date }
+  $script:apiEstado = 'ok'; $script:apiMotivo = 'en vivo desde Anthropic (cada 90 s)'; $script:fallos = 0; $script:avisado = ''
+  $script:proxima = (Get-Date).AddSeconds(90)
+}
 
 function Metricas($m) {
   $out = @()
@@ -225,19 +304,41 @@ function FilaBarras($ms, $W) {
   $g
 }
 
+# ---------- lista vertical (vista media angosta) ----------
+function ListaMedia($ms, $W, $H) {
+  $g = New-Object System.Windows.Controls.Grid
+  $g.Margin = '2,2,2,4'
+  $alto = $H - 12 - 6
+  $cuantas = [Math]::Max(1, [Math]::Min($ms.Count, [Math]::Floor($alto / 30)))
+  Filas $g (@('*') * $cuantas)
+  $i = 0
+  foreach ($x in $ms[0..($cuantas - 1)]) {
+    $col = ColorDe $x.pct
+    $s = New-Object System.Windows.Controls.StackPanel; $s.VerticalAlignment = 'Center'
+    $h = New-Object System.Windows.Controls.Grid; Cols $h @('*', 'a')
+    $n = Texto $x.largo $C_BLANCO 11.5 $false $FUENTE_UI; $n.VerticalAlignment = 'Bottom'
+    [void]$h.Children.Add($n)
+    [void]$h.Children.Add((Colocar (Texto "$([Math]::Round($x.pct))%" $col 14 $true) 1))
+    [void]$s.Children.Add($h)
+    $b = Barra $x.pct $col 4; $b.Margin = '0,3,0,0'; [void]$s.Children.Add($b)
+    [void]$g.Children.Add((Colocar $s 0 $i)); $i++
+  }
+  $g
+}
+
 # ---------- detalle (lista, como la fila de reproducción) ----------
-function Detalle($ms, $maxAlto) {
+function Detalle($ms, $maxAlto, $conSep = $true) {
   $s = New-Object System.Windows.Controls.StackPanel
   $s.Margin = '0,5,0,0'
   $sep = New-Object System.Windows.Controls.Grid; Cols $sep @('*', 'a', '*')
   foreach ($c in 0, 2) { $l = New-Object System.Windows.Controls.Border; $l.Height = 1; $l.Background = Pincel '#2A2A2E'; [void]$sep.Children.Add((Colocar $l $c)) }
   $tt = Texto ' DETALLE ' $C_GRIS 9; [void]$sep.Children.Add((Colocar $tt 1))
-  [void]$s.Children.Add($sep)
-  $usado = 22
+  if ($conSep) { [void]$s.Children.Add($sep) }
+  $fila = 34 * $script:k; $usado = 22 * $script:k
   foreach ($x in $ms) {
-    if ($usado + 34 -gt $maxAlto) { break }
+    if ($usado + $fila -gt $maxAlto) { break }
     $col = ColorDe $x.pct
-    $r = New-Object System.Windows.Controls.Grid; $r.Margin = '0,4,0,0'; Cols $r @('*', 'a')
+    $r = New-Object System.Windows.Controls.Grid; $r.Margin = "0,$([Math]::Round(5 * $script:k)),0,0"; Cols $r @('*', 'a')
     $iz = New-Object System.Windows.Controls.StackPanel
     [void]$iz.Children.Add((Texto $x.largo $C_BLANCO 12 $false $FUENTE_UI))
     $sub = if ($x.ren) { if ($x.n -eq 'Ctx') { $x.ren } else { "se renueva $($x.ren)" } } else { '' }
@@ -246,8 +347,8 @@ function Detalle($ms, $maxAlto) {
     $p = Texto "$([Math]::Round($x.pct))%" $col 13 $true; $p.VerticalAlignment = 'Center'
     [void]$r.Children.Add((Colocar $p 1))
     [void]$s.Children.Add($r)
-    $b = Barra $x.pct $col 3; $b.Margin = '0,4,0,0'; [void]$s.Children.Add($b)
-    $usado += 34
+    $b = Barra $x.pct $col (3 * $script:k); $b.Margin = '0,4,0,0'; [void]$s.Children.Add($b)
+    $usado += $fila
   }
   $s
 }
@@ -256,14 +357,18 @@ function Detalle($ms, $maxAlto) {
 function Alto($ms, $edad, $W, $H) {
   $principal = $ms[0]
   $g = New-Object System.Windows.Controls.Grid
-  $g.Margin = '0,10,0,0'
-  $anchoUtil = $W - 14; $altoUtil = $H - 12 - 10
-  $conDetalle = $altoUtil -ge 300 -and $ms.Count -gt 1
-  $tam = [Math]::Min($anchoUtil - 8, $altoUtil - 50 - $(if ($conDetalle) { 22 + 34 * ($ms.Count - 1) } else { 0 }))
-  $tam = [Math]::Max(70, [Math]::Min($tam, 300))
+  $g.Margin = '0,10,0,6'
+  $anchoUtil = $W - 14; $altoUtil = $H - 12 - 16
+  $script:k = [Math]::Max(1.0, [Math]::Min(2.2, [Math]::Min($anchoUtil / 240, $altoUtil / 420)))
+  $resto = @($ms | Select-Object -Skip 1)
+  $conDetalle = $altoUtil -ge 300 -and $resto.Count -gt 0
+  $tam = [Math]::Min($anchoUtil - 8, $altoUtil - 50 * $script:k - $(if ($conDetalle) { (22 + 34 * $resto.Count) * $script:k } else { 0 }))
+  $tam = [Math]::Max(70, [Math]::Min($tam, 420))
+  Filas $g @('*', 'a')
   $s = New-Object System.Windows.Controls.StackPanel
   $a = Anillo $principal.pct (ColorDe $principal.pct) $tam $principal.n; $a.HorizontalAlignment = 'Center'
-  [void]$s.Children.Add($a)
+  $a.VerticalAlignment = 'Center'
+  [void]$g.Children.Add($a)
   $t = New-Object System.Windows.Controls.Grid; $t.Margin = '2,6,0,0'; Cols $t @('*', 'a')
   $info = New-Object System.Windows.Controls.StackPanel
   [void]$info.Children.Add((Texto $principal.largo $C_BLANCO 16 $true $FUENTE_UI))
@@ -272,9 +377,9 @@ function Alto($ms, $edad, $W, $H) {
   [void]$info.Children.Add((Texto $sub $C_GRIS2 10))
   [void]$t.Children.Add($info)
   [void]$s.Children.Add($t)
-  if ($conDetalle) { [void]$s.Children.Add((Detalle @($ms | Select-Object -Skip 1) ($altoUtil - $tam - 48))) }
-  $s.VerticalAlignment = 'Center'
-  [void]$g.Children.Add($s)
+  if ($conDetalle) { [void]$s.Children.Add((Detalle $resto ($altoUtil - $tam - 40 * $script:k))) }
+  $s.VerticalAlignment = 'Bottom'
+  [void]$g.Children.Add((Colocar $s 0 1))
   $g
 }
 
@@ -283,14 +388,15 @@ function AltoAncho($ms, $edad, $W, $H) {
   $g = New-Object System.Windows.Controls.Grid
   $g.Margin = '0,10,0,0'
   Cols $g @('a', '*')
-  $tam = [Math]::Max(70, [Math]::Min($H - 12 - 10 - 4, 260))
+  $script:k = [Math]::Max(1.0, [Math]::Min(2.2, [Math]::Min(($W - 14) / 480, ($H - 22) / 230)))
+  $tam = [Math]::Max(70, [Math]::Min([Math]::Min(($H - 26) * 0.88, ($W - 14) * 0.4), 400))
   $iz = New-Object System.Windows.Controls.StackPanel; $iz.VerticalAlignment = 'Center'
   [void]$iz.Children.Add((Anillo $ms[0].pct (ColorDe $ms[0].pct) $tam $ms[0].n))
   [void]$g.Children.Add($iz)
-  $de = New-Object System.Windows.Controls.StackPanel; $de.Margin = '12,0,0,0'; $de.VerticalAlignment = 'Center'
+  $de = New-Object System.Windows.Controls.StackPanel; $de.Margin = "$([Math]::Round(14 * $script:k)),0,0,0"; $de.VerticalAlignment = 'Center'
   [void]$de.Children.Add((Texto 'Claude · uso' $C_BLANCO 16 $true $FUENTE_UI))
   if ($edad) { [void]$de.Children.Add((Texto "act. $edad" $C_GRIS2 10)) }
-  [void]$de.Children.Add((Detalle $ms ($H - 80)))
+  [void]$de.Children.Add((Detalle $ms ($H - 22 - 40 * $script:k) $false))
   [void]$g.Children.Add((Colocar $de 1))
   $g
 }
@@ -303,28 +409,35 @@ function Vacio {
 }
 
 function Medidas {
-  $w = $ventana.ActualWidth; $h = $ventana.ActualHeight
-  if ($w -le 0) { $w = $ventana.Width; $h = $ventana.Height }
+  $w = $ventana.Width; $h = $ventana.Height
+  if ([double]::IsNaN($w) -or $w -le 0) { $w = $ventana.ActualWidth; $h = $ventana.ActualHeight }
   $w, $h
 }
 function Modo($w, $h) {
-  if ($h -lt 95) { 'tira' } elseif ($h -lt 190) { 'media' } elseif ($w -gt $h * 1.35) { 'altoancho' } else { 'alto' }
+  if ($h -lt 95) { 'tira' } elseif ($h -lt 190) { if ($w -lt 300) { 'lista' } else { 'media' } } elseif ($w -gt $h * 1.35) { 'altoancho' } else { 'alto' }
 }
 
 $script:ultimo = ''
 function Actualizar([bool]$forzar = $false) {
+  RevisarApi; PedirApi
   $W, $H = Medidas
   $modo = Modo $W $H
   $datos = if (Test-Path $archivo) { Get-Content $archivo -Raw -Encoding UTF8 } else { '' }
   $m = $null; $min = $null
   if ($datos) { try { $m = $datos | ConvertFrom-Json; $min = [Math]::Floor(((Get-Date) - [DateTime]::Parse($m.updatedAt).ToLocalTime()).TotalMinutes) } catch {} }
-  $firma = "$modo|$datos|$min|$([Math]::Round($W / 8))|$([Math]::Round($H / 8))"
+  $vivo = $script:api -and ((Get-Date) - $script:api.t).TotalMinutes -lt 5
+  if ($vivo) { $min = [Math]::Floor(((Get-Date) - $script:api.t).TotalMinutes) }
+  $firma = "$modo|$datos|$min|$vivo|$($script:api.t)|$($script:apiEstado)|$([Math]::Round($W / 8))|$([Math]::Round($H / 8))"
   if (-not $forzar -and $firma -eq $script:ultimo) { return }
   $script:ultimo = $firma
-  $raiz.Children.Clear(); $linea.Children.Clear()
+  $raiz.Children.Clear(); $linea.Children.Clear(); $script:k = 1.0
   $edad = if ($null -eq $min) { $null } elseif ($min -lt 1) { 'ahora' } elseif ($min -lt 60) { "hace $min min" } else { "hace $([Math]::Floor($min / 60)) h" }
-  if (-not $m) { [void]$raiz.Children.Add((Vacio)); return }
-  $ms = @(Metricas $m)
+  $script:viejo = (-not $vivo) -and ($null -ne $min) -and ($min -ge 10)
+  if ($script:viejo) { $edad = "$edad · dato viejo" }
+  $punto.Fill = Pincel $(if ($vivo) { $C_VERDE } elseif ($script:viejo) { $C_NARANJA } else { '#EAB308' })
+  $punto.ToolTip = if ($vivo) { $script:apiMotivo } else { "Usando el dato de Claude Code. Uso en vivo: $($script:apiMotivo)" }
+  if (-not $m -and -not $vivo) { [void]$raiz.Children.Add((Vacio)); return }
+  $ms = if ($vivo) { @($script:api.ms) + @(@(if ($m) { Metricas $m }) | Where-Object { $_.n -eq 'Ctx' }) } else { @(Metricas $m) }
   if ($ms.Count -eq 0) { [void]$raiz.Children.Add((Vacio)); return }
   switch ($modo) {
     'tira' { [void]$raiz.Children.Add((Tira $ms $edad $W $true)) }
@@ -335,10 +448,12 @@ function Actualizar([bool]$forzar = $false) {
       [void]$s.Children.Add((FilaBarras $ms $W))
       [void]$raiz.Children.Add($s)
     }
+    'lista' { [void]$raiz.Children.Add((ListaMedia $ms $W $H)) }
     'alto' { [void]$raiz.Children.Add((Alto $ms $edad $W $H)) }
     'altoancho' { [void]$raiz.Children.Add((AltoAncho $ms $edad $W $H)) }
   }
   # línea de progreso abajo (límite principal), como la de la canción
+  $script:k = 1.0
   $l = Barra $ms[0].pct (ColorDe $ms[0].pct) 2
   $l.Children[0].Background = Pincel '#00000000'
   [void]$linea.Children.Add($l)
@@ -358,6 +473,7 @@ $ventana.Add_MouseEnter({
 $ventana.Add_MouseLeave({ $marco.BorderBrush = Pincel '#2A2A2E'; $chrome.Visibility = 'Collapsed'; $grip.Visibility = 'Collapsed' })
 $ventana.Add_MouseLeftButtonDown({ param($s, $e)
   if ($e.OriginalSource.Tag -ne 'boton' -and $e.ButtonState -eq 'Pressed') { try { $ventana.DragMove() } catch {} } })
+$ventana.Add_Closed({ try { $aviso.Dispose() } catch {} })
 $ventana.Add_StateChanged({ if ($ventana.WindowState -eq 'Normal') { $ventana.Topmost = $true } })
 $ventana.Add_SizeChanged({ Actualizar })
 
