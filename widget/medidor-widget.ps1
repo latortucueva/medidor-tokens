@@ -9,25 +9,34 @@ $archivo = Join-Path $env:USERPROFILE '.claude\medidor-tokens.json'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
-        Title="Medidor Claude" Width="300" Height="125" MinWidth="120" MinHeight="70"
+        Title="Medidor Claude" Width="300" Height="58" MinWidth="170" MinHeight="58"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         Topmost="True" ShowInTaskbar="True" ResizeMode="CanResize">
   <shell:WindowChrome.WindowChrome>
     <shell:WindowChrome ResizeBorderThickness="7" CaptionHeight="0" CornerRadius="10" GlassFrameThickness="0" UseAeroCaptionButtons="False"/>
   </shell:WindowChrome.WindowChrome>
-  <Border CornerRadius="10" Background="#F209090B" BorderBrush="#00FF66" BorderThickness="1" Padding="8">
-    <Viewbox x:Name="Escala" Stretch="Uniform" StretchDirection="Both">
-      <StackPanel x:Name="Raiz"/>
-    </Viewbox>
+  <Border x:Name="Marco" CornerRadius="10" Background="#F209090B" BorderBrush="#2A2A2E" BorderThickness="1" ClipToBounds="True">
+    <Grid>
+      <Viewbox x:Name="Escala" Stretch="Uniform" StretchDirection="Both" Margin="8">
+        <StackPanel x:Name="Raiz"/>
+      </Viewbox>
+      <Grid x:Name="Linea" Height="2" VerticalAlignment="Bottom" Margin="10,0,10,1"/>
+    </Grid>
   </Border>
 </Window>
 '@
 
 $ventana = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $xaml))
 $raiz = $ventana.FindName('Raiz')
+$escala = $ventana.FindName('Escala')
+$marco = $ventana.FindName('Marco')
+$linea = $ventana.FindName('Linea')
+$logo = Join-Path $PSScriptRoot 'logo.png'
+$ventana.Add_MouseEnter({ $marco.BorderBrush = Pincel '#00FF66' })
+$ventana.Add_MouseLeave({ $marco.BorderBrush = Pincel '#2A2A2E' })
 $area = [System.Windows.SystemParameters]::WorkArea
 $ventana.Left = $area.Right - 316
-$ventana.Top = $area.Bottom - 160
+$ventana.Top = $area.Bottom - 74
 
 $conv = New-Object System.Windows.Media.BrushConverter
 function Pincel($hex) { $conv.ConvertFromString($hex) }
@@ -152,6 +161,81 @@ function DisenoVertical($ms, $edad) {
   if ($edad) { $e = Texto "act. $edad" $GRIS 9; $e.HorizontalAlignment = 'Center'; $e.Margin = '0,2,0,0'; [void]$raiz.Children.Add($e) }
 }
 
+
+# Tira (altura mínima, estilo mini reproductor): se muestran más datos a medida que se ensancha
+function DisenoTira($ms, $edad, $W) {
+  $g = New-Object System.Windows.Controls.Grid
+  $g.Width = [Math]::Max(150, $W - 18); $g.Height = 40
+  foreach ($w in 40, 0, -1, -1) {
+    $c = New-Object System.Windows.Controls.ColumnDefinition
+    $c.Width = if ($w -eq 0) { [System.Windows.GridLength]::new(1, 'Star') } elseif ($w -eq -1) { [System.Windows.GridLength]::Auto } else { [System.Windows.GridLength]::new($w) }
+    $g.ColumnDefinitions.Add($c)
+  }
+  $th = New-Object System.Windows.Controls.Border
+  $th.Width = 38; $th.Height = 38; $th.CornerRadius = 6; $th.Background = Pincel '#102A1C'
+  if (Test-Path $logo) {
+    $img = New-Object System.Windows.Controls.Image
+    $bm = New-Object System.Windows.Media.Imaging.BitmapImage
+    $bm.BeginInit(); $bm.UriSource = [Uri]$logo; $bm.CacheOption = 'OnLoad'; $bm.EndInit()
+    $img.Source = $bm; $img.Margin = '3'
+    $th.Child = $img
+  } else { $th.Child = (Texto 'C' $VERDE 18 $true); $th.Child.HorizontalAlignment = 'Center'; $th.Child.VerticalAlignment = 'Center' }
+  [void]$g.Children.Add($th)
+
+  $info = New-Object System.Windows.Controls.StackPanel
+  $info.VerticalAlignment = 'Center'; $info.Margin = '9,0,6,0'
+  $t1 = New-Object System.Windows.Controls.TextBlock
+  $t1.Text = 'Claude · uso'; $t1.Foreground = Pincel $BLANCO; $t1.FontFamily = 'Segoe UI Semibold, Segoe UI'; $t1.FontSize = 13; $t1.TextTrimming = 'CharacterEllipsis'
+  [void]$info.Children.Add($t1)
+  if ($edad) { $t2 = Texto "act. $edad" $GRIS2 10; $t2.TextTrimming = 'CharacterEllipsis'; [void]$info.Children.Add($t2) }
+  [System.Windows.Controls.Grid]::SetColumn($info, 1); [void]$g.Children.Add($info)
+
+  # cuántas métricas entran y con cuánto detalle, según el ancho libre
+  $libre = $W - 40 - 120 - 54
+  $orden = @($ms | Where-Object { $_.n -eq '5 h' }) + @($ms | Where-Object { $_.n -eq 'Sem' }) + @($ms | Where-Object { $_.n -eq 'Ctx' })
+  $detalle = $libre -ge 420
+  $ancho = if ($detalle) { 140 } else { 62 }
+  $cuantas = [Math]::Max(1, [Math]::Min($orden.Count, [Math]::Floor($libre / $ancho)))
+  $sp = New-Object System.Windows.Controls.StackPanel
+  $sp.Orientation = 'Horizontal'; $sp.VerticalAlignment = 'Center'
+  foreach ($x in $orden[0..($cuantas - 1)]) {
+    $col = if ($x.pct -ge 80) { $NARANJA } else { $VERDE }
+    $m = New-Object System.Windows.Controls.StackPanel
+    $m.Margin = '10,0,4,0'; $m.VerticalAlignment = 'Center'
+    $fila = New-Object System.Windows.Controls.StackPanel
+    $fila.Orientation = 'Horizontal'
+    [void]$fila.Children.Add((Texto "$($x.n) " $GRIS2 10.5))
+    [void]$fila.Children.Add((Texto "$([Math]::Round($x.pct))%" $col 12 $true))
+    [void]$m.Children.Add($fila)
+    if ($detalle) {
+      $b = Barra $x.pct $col 3; $b.Width = 120; $b.Margin = '0,3,0,2'
+      [void]$m.Children.Add($b)
+      $r = if ($x.iso) { Renueva $x.iso $true } else { $x.extra }
+      if ($r) { [void]$m.Children.Add((Texto $r $GRIS 9)) }
+    }
+    [void]$sp.Children.Add($m)
+  }
+  [System.Windows.Controls.Grid]::SetColumn($sp, 2); [void]$g.Children.Add($sp)
+
+  $bt = New-Object System.Windows.Controls.StackPanel
+  $bt.Orientation = 'Horizontal'; $bt.VerticalAlignment = 'Center'; $bt.Margin = '8,0,0,0'
+  $mn = Boton '–' 'Minimizar' { $ventana.WindowState = 'Minimized' }; $mn.FontSize = 15
+  $cl = Boton '✕' 'Cerrar' { $ventana.Close() }; $cl.FontSize = 12; $cl.Margin = '10,2,2,0'
+  [void]$bt.Children.Add($mn); [void]$bt.Children.Add($cl)
+  [System.Windows.Controls.Grid]::SetColumn($bt, 3); [void]$g.Children.Add($bt)
+  [void]$raiz.Children.Add($g)
+
+  # línea de progreso abajo, como la de la canción: el límite de 5 h
+  $p5 = @($ms | Where-Object { $_.n -eq '5 h' })
+  if ($p5.Count) {
+    $col = if ($p5[0].pct -ge 80) { $NARANJA } else { $VERDE }
+    $l = Barra $p5[0].pct $col 2
+    $l.Background = Pincel '#00000000'
+    $l.Children[0].Background = Pincel '#00000000'
+    [void]$linea.Children.Add($l)
+  }
+}
+
 # Compacto: una sola línea con los números (ventanas chicas o muy anchas y bajas)
 function DisenoCompacto($ms) {
   $s = New-Object System.Windows.Controls.StackPanel
@@ -171,7 +255,7 @@ function Modo {
   $w = $ventana.ActualWidth; $h = $ventana.ActualHeight
   if ($w -le 0) { $w = $ventana.Width; $h = $ventana.Height }
   $r = $w / $h
-  if ($h -lt 85 -or $r -gt 4) { 'compacto' } elseif ($r -lt 1.15) { 'vertical' } else { 'horizontal' }
+  if ($h -lt 95) { 'tira' } elseif ($r -lt 1.15) { 'vertical' } else { 'horizontal' }
 }
 
 $script:ultimo = ''
@@ -180,10 +264,13 @@ function Actualizar([bool]$forzar = $false) {
   $datos = if (Test-Path $archivo) { Get-Content $archivo -Raw -Encoding UTF8 } else { '' }
   $min = $null
   if ($datos) { try { $m = $datos | ConvertFrom-Json; $min = [Math]::Floor(((Get-Date) - [DateTime]::Parse($m.updatedAt).ToLocalTime()).TotalMinutes) } catch {} }
-  $firma = "$modo|$datos|$min"
+  $anchoAct = [Math]::Round($(if ($ventana.ActualWidth -gt 0) { $ventana.ActualWidth } else { $ventana.Width }) / 10)
+  $firma = "$modo|$datos|$min|$(if ($modo -eq 'tira') { $anchoAct })"
   if (-not $forzar -and $firma -eq $script:ultimo) { return }
   $script:ultimo = $firma
-  $raiz.Children.Clear()
+  $raiz.Children.Clear(); $linea.Children.Clear()
+  $escala.Stretch = if ($modo -eq 'tira') { 'None' } else { 'Uniform' }
+  $escala.Margin = if ($modo -eq 'tira') { '6,6,6,6' } else { '8' }
   if (-not $datos) {
     [void]$raiz.Children.Add((Cabecera 220 $null $false))
     [void]$raiz.Children.Add((Texto "Sin datos todavía.`nAbrí Claude Code y mandá un mensaje." $GRIS2 10.5))
@@ -193,7 +280,7 @@ function Actualizar([bool]$forzar = $false) {
   $ms = Metricas $m
   switch ($modo) {
     'vertical' { DisenoVertical $ms $edad }
-    'compacto' { DisenoCompacto $ms }
+    'tira' { DisenoTira $ms $edad ($anchoAct * 10) }
     default { DisenoHorizontal $ms $edad }
   }
 }
