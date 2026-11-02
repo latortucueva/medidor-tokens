@@ -425,6 +425,42 @@ function Modo($w, $h) {
   if ($h -lt 95) { 'tira' } elseif ($h -lt 190) { if ($w -lt 300) { 'lista' } else { 'media' } } elseif ($w -gt $h * 1.35) { 'altoancho' } else { 'alto' }
 }
 
+# ---------- ícono dinámico: el anillo del ícono sigue al límite principal ----------
+$script:iconoFirma = ''
+$script:logoBmp = $null
+if (Test-Path $logo) { try { $script:logoBmp = New-Object System.Windows.Media.Imaging.BitmapImage; $script:logoBmp.BeginInit(); $script:logoBmp.UriSource = [Uri]$logo; $script:logoBmp.DecodePixelWidth = 128; $script:logoBmp.CacheOption = 'OnLoad'; $script:logoBmp.EndInit() } catch { $script:logoBmp = $null } }
+function IconoDinamico($pct, $color) {
+  $firma = "$([Math]::Round($pct))|$color"
+  if ($firma -eq $script:iconoFirma) { return }
+  $script:iconoFirma = $firma
+  try {
+    $S = 64.0; $w = 7.0; $r = ($S - 2 * 3 - $w) / 2; $c = $S / 2
+    $dv = New-Object System.Windows.Media.DrawingVisual
+    $dc = $dv.RenderOpen()
+    $dc.DrawRoundedRectangle((Pincel '#09090B'), $null, (New-Object System.Windows.Rect 0, 0, $S, $S), 14, 14)
+    $pista = New-Object System.Windows.Media.Pen (Pincel $C_PISTA), $w
+    $dc.DrawEllipse($null, $pista, (New-Object System.Windows.Point $c, $c), $r, $r)
+    $v = [Math]::Max(0.0, [Math]::Min(99.9, [double]$pct))
+    if ($v -gt 0) {
+      $ang = $v / 100 * 2 * [Math]::PI
+      $g = New-Object System.Windows.Media.StreamGeometry
+      $ctx = $g.Open()
+      $ctx.BeginFigure((New-Object System.Windows.Point $c, ($c - $r)), $false, $false)
+      $ctx.ArcTo((New-Object System.Windows.Point ($c + $r * [Math]::Sin($ang)), ($c - $r * [Math]::Cos($ang))), (New-Object System.Windows.Size $r, $r), 0, ($v -gt 50), 'Clockwise', $true, $false)
+      $ctx.Close()
+      $arco = New-Object System.Windows.Media.Pen (Pincel $color), $w
+      $arco.StartLineCap = 'Round'; $arco.EndLineCap = 'Round'
+      $dc.DrawGeometry($null, $arco, $g)
+    }
+    if ($script:logoBmp) { $L = 38.0; $dc.DrawImage($script:logoBmp, (New-Object System.Windows.Rect (($S - $L) / 2), (($S - $L) / 2), $L, $L)) }
+    $dc.Close()
+    $rb = New-Object System.Windows.Media.Imaging.RenderTargetBitmap 64, 64, 96, 96, ([System.Windows.Media.PixelFormats]::Pbgra32)
+    $rb.Render($dv); $rb.Freeze()
+    $ventana.Icon = $rb
+    $ventana.Title = "Claude $([Math]::Round($pct))%"
+  } catch {}
+}
+
 $script:ultimo = ''
 function Actualizar([bool]$forzar = $false) {
   RevisarApi; PedirApi
@@ -462,6 +498,7 @@ function Actualizar([bool]$forzar = $false) {
   }
   # línea de progreso abajo (límite principal), como la de la canción
   $script:k = 1.0
+  IconoDinamico $ms[0].pct (ColorDe $ms[0].pct)
   $l = Barra $ms[0].pct (ColorDe $ms[0].pct) 2
   $l.Children[0].Background = Pincel '#00000000'
   [void]$linea.Children.Add($l)
