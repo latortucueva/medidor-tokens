@@ -6,6 +6,9 @@
 #   alto        -> indicador circular grande + detalle de cada límite
 # OJO: en PowerShell las variables no distinguen mayúsculas; no reutilizar nombres de constantes.
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
+# una sola instancia: si ya hay un medidor abierto, no abrir otro
+$script:unico = New-Object System.Threading.Mutex($false, 'Local\LaTortucueva.MedidorClaude')
+if (-not $script:unico.WaitOne(0)) { exit }
 # ID propio en la barra de tareas: así no se agrupa con PowerShell y muestra el ícono del widget
 try {
   Add-Type -Namespace Tortu -Name Shell -MemberDefinition '[DllImport("shell32.dll")] public static extern int SetCurrentProcessExplicitAppUserModelID([MarshalAs(UnmanagedType.LPWStr)] string id);'
