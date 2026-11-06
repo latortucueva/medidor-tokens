@@ -33,7 +33,7 @@ $logo = Join-Path $PSScriptRoot 'logo.png'
       <Grid x:Name="Raiz" Margin="7,6,7,6" ClipToBounds="True"/>
       <Grid x:Name="Linea" Height="2" VerticalAlignment="Bottom" Margin="10,0,10,1"/>
       <Grid x:Name="Chrome" VerticalAlignment="Top" Height="20" Margin="8,3,8,0" Visibility="Collapsed"/>
-      <Ellipse x:Name="Punto" Width="6" Height="6" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,5,5,0" Fill="#3F3F46"/>
+      <Ellipse x:Name="Punto" Width="6" Height="6" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="4,4,0,0" Fill="#3F3F46" Panel.ZIndex="5"/>
       <TextBlock x:Name="Grip" Text="◢" Foreground="#3F3F46" FontSize="9" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,3,2" Visibility="Collapsed" IsHitTestVisible="False"/>
     </Grid>
   </Border>
